@@ -1,0 +1,40 @@
+# File Sync Workflow
+# Watches a directory and syncs changes
+
+name: file-sync
+description: Automatically sync files when changes are detected
+
+triggers:
+  - type: file
+    path: /tmp/watched-folder
+    patterns:
+      - "*.txt"
+      - "*.json"
+      - "*.yaml"
+    events:
+      - created
+      - modified
+
+steps:
+  - name: log-change
+    action:
+      type: shell
+      command: echo "File changed: {{trigger.path}} ({{trigger.event_type}})"
+
+  - name: validate-file
+    action:
+      type: shell
+      command: |
+        if [ -f "{{trigger.path}}" ]; then
+          echo "File exists and is valid"
+        else
+          echo "File was deleted"
+        fi
+
+  - name: sync-file
+    action:
+      type: shell
+      command: |
+        if [ -f "{{trigger.path}}" ]; then
+          cp "{{trigger.path}}" /tmp/synced/ 2>/dev/null || mkdir -p /tmp/synced && cp "{{trigger.path}}" /tmp/synced/
+        fi

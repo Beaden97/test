@@ -1,0 +1,39 @@
+# Service Health Check Workflow
+# Monitors service health at regular intervals
+
+name: health-check
+description: Monitor service availability and report status
+
+triggers:
+  - type: cron
+    expression: "*/5 * * * *"  # Every 5 minutes
+
+steps:
+  - name: check-disk-space
+    action:
+      type: shell
+      command: df -h / | tail -1 | awk '{print $5}' | sed 's/%//'
+    on_failure: continue
+
+  - name: check-memory
+    action:
+      type: shell
+      command: free -m | awk 'NR==2{printf "%.1f", $3*100/$2}'
+    on_failure: continue
+
+  - name: check-load
+    action:
+      type: shell
+      command: uptime | awk -F'load average:' '{print $2}' | awk -F, '{print $1}'
+    on_failure: continue
+
+  - name: generate-report
+    action:
+      type: shell
+      command: |
+        echo "=== Health Check Report ==="
+        echo "Timestamp: $(date)"
+        echo "Disk Usage: {{results.check-disk-space.stdout}}%"
+        echo "Memory Usage: {{results.check-memory.stdout}}%"
+        echo "Load Average: {{results.check-load.stdout}}"
+        echo "=========================="

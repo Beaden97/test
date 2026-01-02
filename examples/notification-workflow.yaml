@@ -1,0 +1,41 @@
+# Notification Workflow
+# Sends notifications based on events
+
+name: notifications
+description: Send notifications for important events
+
+triggers:
+  - type: webhook
+    path: /notify
+    method: POST
+
+steps:
+  - name: validate-payload
+    action:
+      type: python
+      code: |
+        def validate(context):
+            data = context.trigger_data
+            required = ["title", "message"]
+            missing = [f for f in required if f not in data.get("body", {})]
+            if missing:
+                raise ValueError(f"Missing fields: {missing}")
+            return {"valid": True}
+        result = validate(context)
+      function: validate
+
+  - name: format-message
+    action:
+      type: python
+      code: |
+        body = context.trigger_data.get("body", {})
+        result = {
+            "formatted": f"[{body.get('title')}] {body.get('message')}",
+            "priority": body.get("priority", "normal")
+        }
+
+  - name: log-notification
+    action:
+      type: shell
+      command: |
+        echo "[$(date)] Notification sent: {{results.format-message.formatted}}"

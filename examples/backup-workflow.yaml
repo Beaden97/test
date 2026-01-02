@@ -1,0 +1,33 @@
+# Automated Backup Workflow
+# Runs daily at 2 AM to backup important files
+
+name: daily-backup
+description: Automated daily backup of project files
+
+triggers:
+  - type: cron
+    expression: "0 2 * * *"  # Daily at 2 AM
+
+steps:
+  - name: create-backup-dir
+    action:
+      type: shell
+      command: mkdir -p /tmp/backups/$(date +%Y%m%d)
+
+  - name: backup-configs
+    action:
+      type: shell
+      command: |
+        tar -czf /tmp/backups/$(date +%Y%m%d)/configs.tar.gz \
+          ~/.config 2>/dev/null || echo "No configs to backup"
+      timeout: 300
+
+  - name: cleanup-old-backups
+    action:
+      type: shell
+      command: find /tmp/backups -mtime +7 -delete 2>/dev/null || true
+
+  - name: log-completion
+    action:
+      type: shell
+      command: echo "Backup completed at $(date)"

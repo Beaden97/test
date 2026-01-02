@@ -1,0 +1,59 @@
+# Data Processing Pipeline
+# Processes data files through multiple stages
+
+name: data-pipeline
+description: Multi-stage data processing pipeline
+
+triggers:
+  - type: file
+    path: /tmp/data-inbox
+    patterns:
+      - "*.csv"
+      - "*.json"
+    events:
+      - created
+
+steps:
+  - name: validate-input
+    action:
+      type: shell
+      command: |
+        file="{{trigger.path}}"
+        if [ -f "$file" ] && [ -s "$file" ]; then
+          echo "valid"
+        else
+          echo "invalid" && exit 1
+        fi
+
+  - name: process-data
+    action:
+      type: python
+      code: |
+        import json
+        from pathlib import Path
+
+        file_path = context.trigger_data.get("path", "")
+        path = Path(file_path)
+
+        if path.suffix == ".json":
+            with open(path) as f:
+                data = json.load(f)
+            result = {"records": len(data) if isinstance(data, list) else 1, "type": "json"}
+        else:
+            with open(path) as f:
+                lines = f.readlines()
+            result = {"records": len(lines) - 1, "type": "csv"}  # Subtract header
+
+  - name: move-to-processed
+    action:
+      type: shell
+      command: |
+        mkdir -p /tmp/data-processed
+        mv "{{trigger.path}}" /tmp/data-processed/
+      on_failure: continue
+
+  - name: log-result
+    action:
+      type: shell
+      command: |
+        echo "Processed {{results.process-data.records}} records ({{results.process-data.type}})"
