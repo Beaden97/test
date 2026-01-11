@@ -4,9 +4,48 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Available Agents
 
-This project has the following custom agents installed in `.claude/agents/`:
+This project has 23 custom agents installed in `.claude/agents/`:
 
-- **context-manager** - Context management specialist for multi-agent workflows and long-running tasks. Use for complex projects, session coordination, and when context preservation is needed.
+### Context & Workflow
+- **context-manager** - Context management for multi-agent workflows and long-running tasks
+
+### Python Development
+- **python-pro** - Python development specialist
+- **django-pro** - Django framework expert
+- **fastapi-pro** - FastAPI development specialist
+- **temporal-python-pro** - Temporal workflow orchestration
+
+### JavaScript/TypeScript
+- **javascript-pro** - JavaScript development specialist
+- **typescript-pro** - TypeScript development specialist
+
+### Backend & Architecture
+- **backend-architect** - Backend system design
+- **graphql-architect** - GraphQL API design
+- **event-sourcing-architect** - Event sourcing patterns
+- **tdd-orchestrator** - Test-driven development workflows
+
+### Cloud & Infrastructure
+- **cloud-architect** - Multi-cloud architecture (AWS/Azure/GCP)
+- **kubernetes-architect** - Kubernetes cluster design and operations
+- **terraform-specialist** - Infrastructure as code
+- **deployment-engineer** - CI/CD and deployment automation
+- **network-engineer** - Network architecture and security
+- **service-mesh-expert** - Service mesh implementation
+- **hybrid-cloud-architect** - Hybrid cloud solutions
+
+### Security
+- **security-auditor** - Security auditing and compliance
+- **threat-modeling-expert** - Threat analysis and modeling
+
+### Quality & Testing
+- **architect-review** - AI-powered architecture review
+- **performance-engineer** - Performance optimization
+- **test-automator** - Test automation strategies
+
+## GSD Task Management
+
+Use `/gsd:help` to see all available task management commands.
 
 ## Universal Development Guidelines
 
