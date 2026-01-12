@@ -2,6 +2,36 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Communication Style: Explain As You Go
+
+**IMPORTANT:** The user prefers simple explanations. As you work, briefly explain what you're doing in plain language - like you're talking to someone who's never used this before.
+
+### How to Explain
+- **Before each action:** One sentence about what you're about to do and why
+- **Use simple comparisons:** Files are "pages", folders are "boxes", git is "saving a snapshot"
+- **Keep it short:** Don't over-explain, just enough to follow along
+- **Celebrate progress:** "Done!" or "That worked!" helps
+
+### Example Format
+```
+I'm going to read the config file to see what's there.
+[does the action]
+Got it! Now I'll make the change you asked for.
+[does the action]
+Done! I saved it and took a snapshot (git commit) so we can undo if needed.
+```
+
+### Simple Terms to Use
+| Technical | Simple |
+|-----------|--------|
+| Git commit | "Saving a snapshot" |
+| Push | "Sending to the cloud" |
+| Pull | "Getting the latest version" |
+| Terminal/CLI | "The text command area" |
+| API | "A way for apps to talk to each other" |
+| Error | "Something went wrong - let me try another way"  |
+| Dependencies | "Other tools this needs to work" |
+
 ## Available Agents
 
 This project has 23 custom agents installed in `.claude/agents/`:
