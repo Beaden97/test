@@ -113,11 +113,10 @@ class GmailClient:
             if not messages:
                 break
 
-            # Fetch full details for each message
-            for msg in messages:
-                email_obj = self._get_email_details(msg['id'])
-                if email_obj:
-                    emails.append(email_obj)
+            # Batch fetch full details for all messages (much faster than N+1)
+            message_ids = [msg['id'] for msg in messages]
+            batch_emails = self._batch_get_email_details(message_ids)
+            emails.extend(batch_emails)
 
             page_token = results.get('nextPageToken')
             if not page_token:
@@ -167,6 +166,79 @@ class GmailClient:
             print(f"⚠️  Couldn't fetch email {message_id}: {e}")
             return None
 
+    def _batch_get_email_details(self, message_ids: list[str]) -> list[Email]:
+        """
+        Batch fetch multiple emails in a single API call.
+
+        Uses Gmail's batch API to fetch up to 100 emails per request,
+        dramatically reducing API calls from O(n) to O(n/100).
+        """
+        if not message_ids:
+            return []
+
+        emails = []
+
+        def callback(request_id, response, exception):
+            if exception:
+                print(f"⚠️  Couldn't fetch email {request_id}: {exception}")
+                return
+            email_obj = self._parse_email_response(response)
+            if email_obj:
+                emails.append(email_obj)
+
+        # Process in batches of 100 (Gmail API limit)
+        for i in range(0, len(message_ids), 100):
+            batch_ids = message_ids[i:i+100]
+            batch = self.service.new_batch_http_request(callback=callback)
+
+            for msg_id in batch_ids:
+                batch.add(
+                    self.service.users().messages().get(
+                        userId=self.user_id,
+                        id=msg_id,
+                        format='metadata',
+                        metadataHeaders=['From', 'To', 'Subject', 'Date']
+                    ),
+                    request_id=msg_id
+                )
+
+            batch.execute()
+
+        return emails
+
+    def _parse_email_response(self, msg: dict) -> Optional[Email]:
+        """
+        Parse a Gmail API message response into an Email object.
+        """
+        try:
+            headers = {h['name']: h['value'] for h in msg.get('payload', {}).get('headers', [])}
+
+            from_header = headers.get('From', 'Unknown')
+            sender_name, sender_email = self._parse_email_address(from_header)
+
+            date_str = headers.get('Date', '')
+            try:
+                date = email.utils.parsedate_to_datetime(date_str)
+            except Exception:
+                date = datetime.now()
+
+            return Email(
+                id=msg['id'],
+                thread_id=msg['threadId'],
+                subject=headers.get('Subject', '(No Subject)'),
+                sender=sender_name,
+                sender_email=sender_email,
+                recipient=headers.get('To', ''),
+                date=date,
+                snippet=msg.get('snippet', ''),
+                labels=msg.get('labelIds', []),
+                is_unread='UNREAD' in msg.get('labelIds', []),
+                size_bytes=int(msg.get('sizeEstimate', 0))
+            )
+        except Exception as e:
+            print(f"⚠️  Error parsing email: {e}")
+            return None
+
     def _parse_email_address(self, from_header: str) -> tuple[str, str]:
         """
         Parse "John Doe <john@example.com>" into ("John Doe", "john@example.com")
@@ -181,6 +253,8 @@ class GmailClient:
         """
         Get all labels (folders) in your Gmail.
 
+        Uses batch API to fetch all label details in a single request.
+
         Args:
             refresh: Force refresh the cache
 
@@ -193,22 +267,30 @@ class GmailClient:
         results = self.service.users().labels().list(userId=self.user_id).execute()
         labels = []
 
-        for label_data in results.get('labels', []):
-            # Get detailed info for each label
-            label_info = self.service.users().labels().get(
-                userId=self.user_id,
-                id=label_data['id']
-            ).execute()
-
+        def callback(request_id, response, exception):
+            if exception:
+                return
             label = Label(
-                id=label_info['id'],
-                name=label_info['name'],
-                type=label_info['type'],
-                messages_total=label_info.get('messagesTotal', 0),
-                messages_unread=label_info.get('messagesUnread', 0)
+                id=response['id'],
+                name=response['name'],
+                type=response['type'],
+                messages_total=response.get('messagesTotal', 0),
+                messages_unread=response.get('messagesUnread', 0)
             )
             labels.append(label)
             self._labels_cache[label.id] = label
+
+        # Batch fetch all label details
+        batch = self.service.new_batch_http_request(callback=callback)
+        for label_data in results.get('labels', []):
+            batch.add(
+                self.service.users().labels().get(
+                    userId=self.user_id,
+                    id=label_data['id']
+                ),
+                request_id=label_data['id']
+            )
+        batch.execute()
 
         return labels
 
@@ -251,6 +333,7 @@ class GmailClient:
         Archive emails (remove from inbox but keep them).
 
         This is SAFE - emails are not deleted, just moved out of inbox.
+        Uses batch API for efficient bulk operations.
 
         Args:
             email_ids: List of email IDs to archive
@@ -262,24 +345,28 @@ class GmailClient:
             print(f"🔹 [DRY RUN] Would archive {len(email_ids)} emails")
             return 0
 
-        count = 0
-        for email_id in email_ids:
-            try:
-                self.service.users().messages().modify(
-                    userId=self.user_id,
-                    id=email_id,
-                    body={'removeLabelIds': ['INBOX']}
-                ).execute()
-                count += 1
-            except Exception as e:
-                print(f"⚠️  Couldn't archive email {email_id}: {e}")
+        if not email_ids:
+            return 0
 
-        print(f"✅ Archived {count} emails")
-        return count
+        try:
+            self.service.users().messages().batchModify(
+                userId=self.user_id,
+                body={
+                    'ids': email_ids,
+                    'removeLabelIds': ['INBOX']
+                }
+            ).execute()
+            print(f"✅ Archived {len(email_ids)} emails")
+            return len(email_ids)
+        except Exception as e:
+            print(f"⚠️  Couldn't archive emails: {e}")
+            return 0
 
     def move_to_label(self, email_ids: list[str], label_id: str, remove_from_inbox: bool = True) -> int:
         """
         Move emails to a specific label/folder.
+
+        Uses batch API for efficient bulk operations.
 
         Args:
             email_ids: List of email IDs to move
@@ -294,24 +381,26 @@ class GmailClient:
             print(f"🔹 [DRY RUN] Would move {len(email_ids)} emails to '{label_name}'")
             return 0
 
-        count = 0
-        for email_id in email_ids:
-            try:
-                body = {'addLabelIds': [label_id]}
-                if remove_from_inbox:
-                    body['removeLabelIds'] = ['INBOX']
+        if not email_ids:
+            return 0
 
-                self.service.users().messages().modify(
-                    userId=self.user_id,
-                    id=email_id,
-                    body=body
-                ).execute()
-                count += 1
-            except Exception as e:
-                print(f"⚠️  Couldn't move email {email_id}: {e}")
+        try:
+            body = {
+                'ids': email_ids,
+                'addLabelIds': [label_id]
+            }
+            if remove_from_inbox:
+                body['removeLabelIds'] = ['INBOX']
 
-        print(f"✅ Moved {count} emails")
-        return count
+            self.service.users().messages().batchModify(
+                userId=self.user_id,
+                body=body
+            ).execute()
+            print(f"✅ Moved {len(email_ids)} emails")
+            return len(email_ids)
+        except Exception as e:
+            print(f"⚠️  Couldn't move emails: {e}")
+            return 0
 
     def move_to_trash(self, email_ids: list[str]) -> int:
         """
@@ -319,6 +408,7 @@ class GmailClient:
 
         SAFE: Emails go to trash first (can be recovered for 30 days).
         They are NOT permanently deleted.
+        Uses batch API for efficient bulk operations.
 
         Args:
             email_ids: List of email IDs to trash
@@ -330,23 +420,29 @@ class GmailClient:
             print(f"🔹 [DRY RUN] Would move {len(email_ids)} emails to trash")
             return 0
 
-        count = 0
-        for email_id in email_ids:
-            try:
-                self.service.users().messages().trash(
-                    userId=self.user_id,
-                    id=email_id
-                ).execute()
-                count += 1
-            except Exception as e:
-                print(f"⚠️  Couldn't trash email {email_id}: {e}")
+        if not email_ids:
+            return 0
 
-        print(f"🗑️  Moved {count} emails to trash (recoverable for 30 days)")
-        return count
+        try:
+            self.service.users().messages().batchModify(
+                userId=self.user_id,
+                body={
+                    'ids': email_ids,
+                    'addLabelIds': ['TRASH'],
+                    'removeLabelIds': ['INBOX']
+                }
+            ).execute()
+            print(f"🗑️  Moved {len(email_ids)} emails to trash (recoverable for 30 days)")
+            return len(email_ids)
+        except Exception as e:
+            print(f"⚠️  Couldn't trash emails: {e}")
+            return 0
 
     def mark_as_read(self, email_ids: list[str]) -> int:
         """
         Mark emails as read.
+
+        Uses batch API for efficient bulk operations.
 
         Args:
             email_ids: List of email IDs to mark as read
@@ -358,20 +454,22 @@ class GmailClient:
             print(f"🔹 [DRY RUN] Would mark {len(email_ids)} emails as read")
             return 0
 
-        count = 0
-        for email_id in email_ids:
-            try:
-                self.service.users().messages().modify(
-                    userId=self.user_id,
-                    id=email_id,
-                    body={'removeLabelIds': ['UNREAD']}
-                ).execute()
-                count += 1
-            except Exception as e:
-                print(f"⚠️  Couldn't mark email {email_id} as read: {e}")
+        if not email_ids:
+            return 0
 
-        print(f"✅ Marked {count} emails as read")
-        return count
+        try:
+            self.service.users().messages().batchModify(
+                userId=self.user_id,
+                body={
+                    'ids': email_ids,
+                    'removeLabelIds': ['UNREAD']
+                }
+            ).execute()
+            print(f"✅ Marked {len(email_ids)} emails as read")
+            return len(email_ids)
+        except Exception as e:
+            print(f"⚠️  Couldn't mark emails as read: {e}")
+            return 0
 
     def get_email_body(self, email_id: str) -> str:
         """

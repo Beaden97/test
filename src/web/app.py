@@ -122,6 +122,7 @@ def api_inbox_stats():
 
 @api_v1.route('/emails')
 @handle_errors
+@cached(ttl_seconds=30)  # Short TTL since email data changes frequently
 @validate_query(
     q=Schema.string(default='in:inbox'),
     limit=Schema.integer(min_val=1, max_val=500, default=50)

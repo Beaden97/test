@@ -2,23 +2,71 @@
 Caching for Gmail Cleanup API
 
 Simple in-memory cache with TTL for expensive operations.
+Includes automatic cleanup of expired entries to prevent memory leaks.
 """
 
 from functools import wraps
 import time
 import hashlib
 import json
-from threading import Lock
+import atexit
+from threading import Lock, Thread, Event
 
 from flask import request
 
 
 class SimpleCache:
-    """Thread-safe in-memory cache with TTL."""
+    """Thread-safe in-memory cache with TTL and automatic cleanup."""
 
-    def __init__(self):
+    def __init__(self, cleanup_interval: int = 60):
+        """
+        Initialize cache with automatic cleanup.
+
+        Args:
+            cleanup_interval: Seconds between cleanup runs (default: 60)
+        """
         self.cache = {}
         self.lock = Lock()
+        self._cleanup_interval = cleanup_interval
+        self._stop_event = Event()
+        self._cleanup_thread = None
+
+    def start_cleanup_thread(self):
+        """Start background cleanup thread."""
+        if self._cleanup_thread is not None and self._cleanup_thread.is_alive():
+            return  # Already running
+
+        self._stop_event.clear()
+        self._cleanup_thread = Thread(target=self._cleanup_loop, daemon=True)
+        self._cleanup_thread.start()
+
+    def stop_cleanup_thread(self):
+        """Stop background cleanup thread."""
+        self._stop_event.set()
+        if self._cleanup_thread is not None:
+            self._cleanup_thread.join(timeout=2)
+            self._cleanup_thread = None
+
+    def _cleanup_loop(self):
+        """Background loop that periodically removes expired entries."""
+        while not self._stop_event.is_set():
+            self._cleanup_expired()
+            self._stop_event.wait(self._cleanup_interval)
+
+    def _cleanup_expired(self) -> int:
+        """Remove all expired entries from cache.
+
+        Returns:
+            Number of entries removed
+        """
+        removed = 0
+        now = time.time()
+        with self.lock:
+            expired_keys = [k for k, (_, exp) in self.cache.items() if exp <= now]
+            for k in expired_keys:
+                del self.cache[k]
+                removed += 1
+        return removed
 
     def get(self, key: str):
         """Get value from cache if not expired."""
@@ -53,12 +101,17 @@ class SimpleCache:
             return {
                 "total_entries": len(self.cache),
                 "valid_entries": valid_entries,
-                "expired_entries": len(self.cache) - valid_entries
+                "expired_entries": len(self.cache) - valid_entries,
+                "cleanup_running": self._cleanup_thread is not None and self._cleanup_thread.is_alive()
             }
 
 
-# Global cache instance
-cache = SimpleCache()
+# Global cache instance with cleanup
+cache = SimpleCache(cleanup_interval=60)
+cache.start_cleanup_thread()
+
+# Clean up on exit
+atexit.register(cache.stop_cleanup_thread)
 
 
 def cached(ttl_seconds: int = 300, key_prefix: str = None):

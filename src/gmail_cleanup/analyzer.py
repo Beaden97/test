@@ -91,10 +91,17 @@ class EmailAnalyzer:
         self.emails = emails
         self._sender_stats: dict[str, SenderStats] = {}
         self._analyzed = False
+        # Pre-computed stats from single pass
+        self._total_size_bytes: int = 0
+        self._unread_count: int = 0
+        self._oldest_date: Optional[datetime] = None
+        self._newest_date: Optional[datetime] = None
 
     def analyze(self) -> dict:
         """
         Run full analysis on the emails.
+
+        Uses single-pass algorithm for O(n) performance instead of O(3n).
 
         Returns:
             Dictionary with analysis results
@@ -104,19 +111,35 @@ class EmailAnalyzer:
 
         return {
             'total_emails': len(self.emails),
-            'total_size_mb': sum(e.size_bytes for e in self.emails) / (1024 * 1024),
-            'unread_count': sum(1 for e in self.emails if e.is_unread),
+            'total_size_mb': self._total_size_bytes / (1024 * 1024),
+            'unread_count': self._unread_count,
             'sender_count': len(self._sender_stats),
-            'date_range': self._get_date_range(),
+            'date_range': {
+                'oldest': self._oldest_date,
+                'newest': self._newest_date
+            },
         }
 
     def _analyze_senders(self):
         """
-        Group emails by sender and calculate statistics.
+        Group emails by sender and calculate all statistics in a single pass.
+
+        Optimized to compute total size, unread count, and date range
+        simultaneously with sender grouping.
         """
         for email in self.emails:
             sender_key = email.sender_email.lower()
 
+            # Accumulate global stats
+            self._total_size_bytes += email.size_bytes
+            if email.is_unread:
+                self._unread_count += 1
+            if self._oldest_date is None or email.date < self._oldest_date:
+                self._oldest_date = email.date
+            if self._newest_date is None or email.date > self._newest_date:
+                self._newest_date = email.date
+
+            # Accumulate per-sender stats
             if sender_key not in self._sender_stats:
                 self._sender_stats[sender_key] = SenderStats(
                     email=email.sender_email,
@@ -138,19 +161,6 @@ class EmailAnalyzer:
 
             if len(stats.sample_subjects) < 3:
                 stats.sample_subjects.append(email.subject)
-
-    def _get_date_range(self) -> dict:
-        """
-        Get the date range of emails.
-        """
-        if not self.emails:
-            return {'oldest': None, 'newest': None}
-
-        dates = [e.date for e in self.emails]
-        return {
-            'oldest': min(dates),
-            'newest': max(dates)
-        }
 
     def get_top_senders(self, limit: int = 20) -> list[SenderStats]:
         """
