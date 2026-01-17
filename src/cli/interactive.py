@@ -1,15 +1,33 @@
 """
 Interactive CLI for Gmail Cleanup
 
-ADHD-Friendly Design:
-- Clear visual feedback with colors and emojis
+ADHD-Friendly Design (Research-Backed):
+
+Working Memory (62-85% of ADHD have deficits - PMC11110569):
+- Pre-made categories reduce cognitive load
 - Batch similar decisions together
-- Quick actions (one key press)
-- Progress tracking so you know where you are
-- "Quick wins" shown first (easy cleanup opportunities)
+
+Decision Fatigue (3x more digital fatigue - J. Attention Disorders 2022):
+- 4D Method limits choices to 4 options
+- Quick actions with single key press
+
+Time Blindness (Meta-analysis of 55 studies confirms deficits):
+- Time-boxed sessions with visual timers
+- Break reminders to prevent hyperfocus burnout
+
+Emotional Dysregulation (38% have mood lability - 10x population rate):
+- Emotional check-ins before starting
+- Progress celebrations for dopamine boost
+- Shame cycle interventions
+
+Task Initiation (ADHD paralysis is freeze response, not laziness):
+- "Quick wins" shown first
+- Micro-sessions for when stuck
+- Avoidance help resources
 """
 
 import sys
+import time
 from typing import Optional, Callable
 from datetime import datetime
 
@@ -26,6 +44,14 @@ from questionary import Style
 from ..gmail_cleanup import GmailAuth, GmailClient, EmailAnalyzer, RuleManager
 from ..gmail_cleanup.client import Email
 from ..gmail_cleanup.rules import Rule, quick_rule
+from ..gmail_cleanup.adhd_strategies import (
+    ADHDStrategies,
+    SESSION_TYPES,
+    ADHD_CATEGORIES,
+    RECOMMENDED_LABELS,
+    get_emotional_checkin,
+    get_session_end_reflection,
+)
 
 
 # Nice colors for the prompts
@@ -65,7 +91,13 @@ class InboxCleanup:
         # Track what we've done
         self.archived_count = 0
         self.labeled_count = 0
+        self.deleted_count = 0
         self.rules_created = 0
+
+        # ADHD session tracking
+        self.session_start_time: Optional[datetime] = None
+        self.emails_processed_this_session = 0
+        self.emotional_state: str = "okay"
 
     def start(self):
         """
@@ -80,15 +112,14 @@ class InboxCleanup:
 
     def _show_welcome(self):
         """
-        Show welcome message.
+        Show welcome message with ADHD-friendly framing.
         """
         console.print()
         console.print(Panel.fit(
             "[bold blue]📧 Gmail Inbox Cleanup Assistant[/]\n\n"
-            "Let's organize your inbox together!\n\n"
-            "[dim]• We'll look at your emails and decide what to do\n"
-            "• Nothing gets deleted without your approval\n"
-            "• You can stop anytime[/]",
+            + ADHDStrategies.get_welcome_message() +
+            "\n[dim]• Nothing gets deleted without your approval\n"
+            "• You can stop anytime - partial progress counts[/]",
             border_style="blue"
         ))
         console.print()
@@ -96,6 +127,47 @@ class InboxCleanup:
         if self.dry_run:
             console.print("[yellow]🔒 SAFE MODE: Nothing will actually change (dry run)[/]")
             console.print()
+
+        # Emotional check-in (research-backed)
+        self._do_emotional_checkin()
+
+    def _do_emotional_checkin(self):
+        """
+        ADHD emotional check-in before starting.
+
+        Research: Addressing the emotional component before diving in
+        helps with task initiation. (Inflow)
+        """
+        checkin = get_emotional_checkin()
+
+        console.print()
+        choice = questionary.select(
+            checkin["prompt"],
+            choices=[
+                f"{emoji} {label} - {desc}"
+                for emoji, label, desc, key in checkin["options"]
+            ],
+            style=custom_style
+        ).ask()
+
+        if choice:
+            # Extract the emotional state key
+            for emoji, label, desc, key in checkin["options"]:
+                if label in choice:
+                    self.emotional_state = key
+                    response = checkin["responses"][key]
+                    console.print(f"\n[cyan]{response}[/]\n")
+
+                    # Offer extra help for overwhelmed/frozen states
+                    if key in ["overwhelmed", "frozen"]:
+                        if questionary.confirm(
+                            "Want to see some strategies that might help?",
+                            default=True,
+                            style=custom_style
+                        ).ask():
+                            console.print(ADHDStrategies.get_avoidance_help())
+                            input("Press Enter to continue...")
+                    break
 
     def _connect(self) -> bool:
         """
@@ -126,17 +198,29 @@ class InboxCleanup:
 
     def _main_menu(self):
         """
-        Show the main menu.
+        Show the main menu with ADHD-friendly options.
         """
+        # Start session timer
+        self.session_start_time = datetime.now()
+
         while True:
             console.print()
+
+            # Check for break reminder (every 25 min)
+            self._check_break_reminder()
+
             stats = self.client.get_inbox_stats()
 
-            # Show current inbox status
+            # Show current inbox status with session progress
+            session_info = ""
+            if self.emails_processed_this_session > 0:
+                session_info = f"\n\n[green]This session: {self.emails_processed_this_session} emails processed[/]"
+
             console.print(Panel(
                 f"[bold]📬 Inbox Status[/]\n\n"
                 f"Total emails: [cyan]{stats['total_inbox']:,}[/]\n"
-                f"Unread: [yellow]{stats['unread_inbox']:,}[/]",
+                f"Unread: [yellow]{stats['unread_inbox']:,}[/]"
+                f"{session_info}",
                 title="Your Inbox",
                 border_style="cyan"
             ))
@@ -144,11 +228,12 @@ class InboxCleanup:
             choice = questionary.select(
                 "What would you like to do?",
                 choices=[
-                    "🔍 Quick Scan - Find easy cleanup opportunities",
+                    "🔍 Quick Scan - Find easy cleanup opportunities (recommended first!)",
                     "📊 Analyze top senders - See who emails you most",
                     "🗂️  Review by sender - Go through emails from one sender",
                     "📝 Manage rules - Create/edit auto-organization rules",
                     "🧹 Bulk cleanup - Archive old or unwanted emails",
+                    "🆘 ADHD Resources - Strategies, 4D method, help for overwhelm",
                     "⚙️  Settings",
                     "👋 Exit",
                 ],
@@ -168,8 +253,64 @@ class InboxCleanup:
                 self._manage_rules()
             elif "Bulk cleanup" in choice:
                 self._bulk_cleanup()
+            elif "ADHD Resources" in choice:
+                self._adhd_resources()
             elif "Settings" in choice:
                 self._settings()
+
+    def _check_break_reminder(self):
+        """
+        Check if it's time for a break (every 25 min).
+
+        Research: ADHD brains can hyperfocus on organizing, leading to
+        exhaustion. Regular breaks maintain sustainable progress.
+        """
+        if self.session_start_time:
+            elapsed = (datetime.now() - self.session_start_time).seconds // 60
+            if elapsed > 0 and elapsed % 25 == 0 and self.emails_processed_this_session > 0:
+                console.print(ADHDStrategies.get_break_reminder(
+                    self.emails_processed_this_session,
+                    elapsed
+                ))
+                input("Press Enter to continue...")
+
+    def _adhd_resources(self):
+        """
+        Show ADHD resources and strategies.
+        """
+        console.print()
+        console.print("[bold]🆘 ADHD Resources[/]")
+        console.print()
+
+        choice = questionary.select(
+            "What would you like to see?",
+            choices=[
+                "📋 The 4D Method - Decision framework for every email",
+                "📊 Realistic Expectations - What 'inbox functional' means",
+                "😰 Feeling Stuck? - Strategies for when you're frozen",
+                "🔄 Breaking the Shame Cycle - You're not lazy",
+                "⚠️  Common Mistakes - What to avoid",
+                "📧 Email Bankruptcy - The fresh start option",
+                "⬅️  Back to menu",
+            ],
+            style=custom_style
+        ).ask()
+
+        if choice and "4D Method" in choice:
+            console.print(ADHDStrategies.get_4d_guide())
+        elif choice and "Realistic" in choice:
+            console.print(ADHDStrategies.get_realistic_expectations())
+        elif choice and "Stuck" in choice:
+            console.print(ADHDStrategies.get_avoidance_help())
+        elif choice and "Shame" in choice:
+            console.print(ADHDStrategies.get_shame_cycle_break())
+        elif choice and "Mistakes" in choice:
+            console.print(ADHDStrategies.get_common_mistakes())
+        elif choice and "Bankruptcy" in choice:
+            console.print(ADHDStrategies.get_email_bankruptcy_guide())
+
+        if choice and "Back" not in choice:
+            input("\nPress Enter to continue...")
 
     def _quick_scan(self):
         """
@@ -773,16 +914,31 @@ class InboxCleanup:
 
     def _show_summary(self):
         """
-        Show session summary before exit.
+        Show session summary with ADHD-friendly celebration.
         """
         console.print()
+
+        # Progress celebration (dopamine boost!)
+        console.print(ADHDStrategies.get_progress_celebration(
+            self.archived_count,
+            self.deleted_count,
+            self.rules_created
+        ))
+
+        # Session duration
+        if self.session_start_time:
+            duration = (datetime.now() - self.session_start_time).seconds // 60
+            console.print(f"⏱️  Session duration: {duration} minutes")
+
+        if self.dry_run:
+            console.print("\n[yellow](Dry run - no actual changes made)[/]")
+
+        # End-of-session reflection
+        console.print(get_session_end_reflection())
+
         console.print(Panel(
-            f"[bold]Session Summary[/]\n\n"
-            f"📥 Emails archived: {self.archived_count}\n"
-            f"🏷️  Emails labeled: {self.labeled_count}\n"
-            f"📝 Rules created: {self.rules_created}\n\n"
-            f"[dim]{'(Dry run - no actual changes made)' if self.dry_run else ''}[/]",
-            title="👋 Goodbye!",
+            "[bold green]You showed up. That matters.[/]\n\n"
+            "Every session builds the habit. See you next time! 👋",
             border_style="green"
         ))
         console.print()
