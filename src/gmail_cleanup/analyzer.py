@@ -249,11 +249,12 @@ class EmailAnalyzer:
         Returns:
             List of old emails
         """
-        cutoff = datetime.now(self.emails[0].date.tzinfo if self.emails and self.emails[0].date.tzinfo else None)
-        if cutoff.tzinfo:
-            cutoff = cutoff - timedelta(days=days)
-        else:
-            cutoff = datetime.now() - timedelta(days=days)
+        if not self.emails:
+            return []
+
+        # Get timezone from first email if available
+        sample_tz = self.emails[0].date.tzinfo if self.emails[0].date.tzinfo else None
+        cutoff = datetime.now(sample_tz) - timedelta(days=days)
 
         return [e for e in self.emails if e.date < cutoff]
 
@@ -286,11 +287,18 @@ class EmailAnalyzer:
 
         suggestions = []
 
+        # Build email lookup map by ID
+        email_by_id = {e.id: e for e in self.emails}
+
+        # Get timezone-aware cutoff for 90 days ago
+        sample_tz = self.emails[0].date.tzinfo if self.emails and self.emails[0].date.tzinfo else None
+        cutoff_90_days = datetime.now(sample_tz) - timedelta(days=90)
+
         # Suggestion 1: Old newsletters
         newsletters = self.find_newsletters()
         for nl in newsletters[:5]:  # Top 5 newsletter senders
-            old_emails = [eid for eid, email in zip(nl.email_ids, self.emails)
-                         if email.date < datetime.now() - timedelta(days=90)]
+            old_emails = [eid for eid in nl.email_ids
+                         if eid in email_by_id and email_by_id[eid].date < cutoff_90_days]
             if old_emails:
                 suggestions.append(CleanupSuggestion(
                     category="old_newsletters",

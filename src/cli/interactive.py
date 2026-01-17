@@ -10,15 +10,13 @@ Features:
 - Safe mode (dry run) by default
 """
 
-import sys
 from typing import Optional
-from datetime import datetime
 
 from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, TextColumn
-from rich.prompt import Prompt, Confirm
+from rich.prompt import Prompt
 from rich import box
 
 import questionary
@@ -471,6 +469,7 @@ class InboxCleanup:
                 self.archived_count += 1
             elif action == "Delete":
                 self.client.move_to_trash([email.id])
+                self.deleted_count += 1
             elif action == "Stop reviewing":
                 break
 
@@ -715,7 +714,8 @@ class InboxCleanup:
                 style=custom_style
             ).ask():
                 email_ids = [e.id for e in emails]
-                self.client.move_to_trash(email_ids)
+                count = self.client.move_to_trash(email_ids)
+                self.deleted_count += count
 
     def _act_on_suggestion(self, suggestion):
         """

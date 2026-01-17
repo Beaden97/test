@@ -5,7 +5,6 @@ A visual way to browse and organize your emails.
 Run this to start a local web server.
 """
 
-import json
 from flask import Flask, render_template, jsonify, request
 from flask_cors import CORS
 
