@@ -73,3 +73,10 @@ build/
 venv/
 ENV/
 
+# Next.js
+frontend/.next/
+frontend/out/
+frontend/node_modules/
+*.tsbuildinfo
+next-env.d.ts
+
