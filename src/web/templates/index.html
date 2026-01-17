@@ -1,0 +1,612 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gmail Inbox Cleanup</title>
+    <style>
+        :root {
+            --bg: #1a1a2e;
+            --card-bg: #16213e;
+            --accent: #4ecca3;
+            --accent-hover: #3db892;
+            --text: #eee;
+            --text-dim: #888;
+            --danger: #e74c3c;
+            --warning: #f39c12;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid #333;
+        }
+
+        h1 {
+            font-size: 1.8em;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .mode-badge {
+            padding: 5px 12px;
+            border-radius: 20px;
+            font-size: 0.8em;
+            font-weight: bold;
+        }
+
+        .mode-badge.safe {
+            background: var(--warning);
+            color: #000;
+        }
+
+        .mode-badge.live {
+            background: var(--accent);
+            color: #000;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .stat-card {
+            background: var(--card-bg);
+            padding: 20px;
+            border-radius: 12px;
+            text-align: center;
+        }
+
+        .stat-card .number {
+            font-size: 2.5em;
+            font-weight: bold;
+            color: var(--accent);
+        }
+
+        .stat-card .label {
+            color: var(--text-dim);
+            margin-top: 5px;
+        }
+
+        .section {
+            background: var(--card-bg);
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+
+        .section h2 {
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .tab {
+            padding: 10px 20px;
+            background: transparent;
+            border: 2px solid var(--accent);
+            color: var(--accent);
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1em;
+            transition: all 0.2s;
+        }
+
+        .tab:hover, .tab.active {
+            background: var(--accent);
+            color: #000;
+        }
+
+        .sender-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .sender-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px;
+            background: rgba(255,255,255,0.05);
+            border-radius: 8px;
+            transition: background 0.2s;
+        }
+
+        .sender-item:hover {
+            background: rgba(255,255,255,0.1);
+        }
+
+        .sender-info {
+            flex: 1;
+        }
+
+        .sender-name {
+            font-weight: bold;
+            margin-bottom: 3px;
+        }
+
+        .sender-email {
+            color: var(--text-dim);
+            font-size: 0.9em;
+        }
+
+        .sender-stats {
+            display: flex;
+            gap: 20px;
+            align-items: center;
+        }
+
+        .stat-pill {
+            padding: 5px 12px;
+            background: rgba(78, 204, 163, 0.2);
+            border-radius: 20px;
+            font-size: 0.9em;
+        }
+
+        .btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.9em;
+            transition: all 0.2s;
+        }
+
+        .btn-primary {
+            background: var(--accent);
+            color: #000;
+        }
+
+        .btn-primary:hover {
+            background: var(--accent-hover);
+        }
+
+        .btn-secondary {
+            background: transparent;
+            border: 1px solid var(--text-dim);
+            color: var(--text);
+        }
+
+        .btn-secondary:hover {
+            border-color: var(--accent);
+            color: var(--accent);
+        }
+
+        .suggestion-list {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .suggestion-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px;
+            background: rgba(255,255,255,0.05);
+            border-radius: 8px;
+            border-left: 4px solid var(--accent);
+        }
+
+        .suggestion-item.priority-1 {
+            border-left-color: var(--danger);
+        }
+
+        .suggestion-item.priority-2 {
+            border-left-color: var(--warning);
+        }
+
+        .suggestion-desc {
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+
+        .suggestion-meta {
+            color: var(--text-dim);
+            font-size: 0.9em;
+        }
+
+        .email-list {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        .email-item {
+            display: grid;
+            grid-template-columns: 30px 150px 1fr 100px;
+            gap: 15px;
+            padding: 12px;
+            background: rgba(255,255,255,0.03);
+            border-radius: 6px;
+            align-items: center;
+            font-size: 0.95em;
+        }
+
+        .email-item:hover {
+            background: rgba(255,255,255,0.08);
+        }
+
+        .email-item.unread {
+            background: rgba(78, 204, 163, 0.1);
+        }
+
+        .email-item input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+        }
+
+        .email-sender {
+            font-weight: 500;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .email-subject {
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .email-date {
+            color: var(--text-dim);
+            font-size: 0.85em;
+            text-align: right;
+        }
+
+        .actions-bar {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+            padding: 15px;
+            background: rgba(0,0,0,0.2);
+            border-radius: 8px;
+        }
+
+        .search-box {
+            flex: 1;
+            padding: 10px 15px;
+            border: 1px solid #444;
+            border-radius: 6px;
+            background: rgba(255,255,255,0.05);
+            color: var(--text);
+            font-size: 1em;
+        }
+
+        .search-box:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: var(--text-dim);
+        }
+
+        .loading::after {
+            content: '';
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 2px solid var(--accent);
+            border-top-color: transparent;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-left: 10px;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: var(--text-dim);
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .email-item {
+                grid-template-columns: 30px 1fr;
+            }
+            .email-date, .email-subject {
+                grid-column: 2;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>📧 Gmail Inbox Cleanup</h1>
+            <span id="mode-badge" class="mode-badge safe">🔒 Safe Mode</span>
+        </header>
+
+        <!-- Stats -->
+        <div class="stats-grid" id="stats">
+            <div class="stat-card">
+                <div class="number" id="stat-total">-</div>
+                <div class="label">Total Emails</div>
+            </div>
+            <div class="stat-card">
+                <div class="number" id="stat-unread">-</div>
+                <div class="label">Unread</div>
+            </div>
+            <div class="stat-card">
+                <div class="number" id="stat-promotions">-</div>
+                <div class="label">Promotions</div>
+            </div>
+            <div class="stat-card">
+                <div class="number" id="stat-social">-</div>
+                <div class="label">Social</div>
+            </div>
+        </div>
+
+        <!-- Tabs -->
+        <div class="tabs">
+            <button class="tab active" data-tab="suggestions">🎯 Quick Wins</button>
+            <button class="tab" data-tab="senders">👥 Top Senders</button>
+            <button class="tab" data-tab="emails">📬 Browse Emails</button>
+            <button class="tab" data-tab="rules">📝 Rules</button>
+        </div>
+
+        <!-- Suggestions Tab -->
+        <div class="section tab-content" id="tab-suggestions">
+            <h2>🎯 Quick Cleanup Opportunities</h2>
+            <div id="suggestions-list" class="suggestion-list">
+                <div class="loading">Analyzing inbox...</div>
+            </div>
+        </div>
+
+        <!-- Senders Tab -->
+        <div class="section tab-content" id="tab-senders" style="display:none;">
+            <h2>👥 Top Senders</h2>
+            <div id="senders-list" class="sender-list">
+                <div class="loading">Loading senders...</div>
+            </div>
+        </div>
+
+        <!-- Emails Tab -->
+        <div class="section tab-content" id="tab-emails" style="display:none;">
+            <h2>📬 Browse Emails</h2>
+            <div class="actions-bar">
+                <input type="text" class="search-box" id="search-box" placeholder="Search (e.g., from:amazon.com, older_than:1y)">
+                <button class="btn btn-primary" onclick="searchEmails()">Search</button>
+                <button class="btn btn-secondary" onclick="archiveSelected()">Archive Selected</button>
+            </div>
+            <div id="emails-list" class="email-list">
+                <div class="loading">Loading emails...</div>
+            </div>
+        </div>
+
+        <!-- Rules Tab -->
+        <div class="section tab-content" id="tab-rules" style="display:none;">
+            <h2>📝 Your Rules</h2>
+            <div id="rules-list">
+                <div class="loading">Loading rules...</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Tab switching
+        document.querySelectorAll('.tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+                document.querySelectorAll('.tab-content').forEach(c => c.style.display = 'none');
+                tab.classList.add('active');
+                document.getElementById('tab-' + tab.dataset.tab).style.display = 'block';
+            });
+        });
+
+        // Load stats
+        async function loadStats() {
+            try {
+                const resp = await fetch('/api/inbox/stats');
+                const data = await resp.json();
+                document.getElementById('stat-total').textContent = data.total_inbox?.toLocaleString() || '-';
+                document.getElementById('stat-unread').textContent = data.unread_inbox?.toLocaleString() || '-';
+                document.getElementById('stat-promotions').textContent = data.categories?.promotions?.toLocaleString() || '-';
+                document.getElementById('stat-social').textContent = data.categories?.social?.toLocaleString() || '-';
+            } catch (e) {
+                console.error('Failed to load stats:', e);
+            }
+        }
+
+        // Load suggestions
+        async function loadSuggestions() {
+            try {
+                const resp = await fetch('/api/analyze/suggestions');
+                const data = await resp.json();
+                const list = document.getElementById('suggestions-list');
+
+                if (!data.suggestions?.length) {
+                    list.innerHTML = '<div class="empty-state">✨ Your inbox looks great!</div>';
+                    return;
+                }
+
+                list.innerHTML = data.suggestions.map(s => `
+                    <div class="suggestion-item priority-${s.priority}">
+                        <div>
+                            <div class="suggestion-desc">${s.description}</div>
+                            <div class="suggestion-meta">${s.email_count} emails • ~${s.size_mb} MB</div>
+                        </div>
+                        <button class="btn btn-primary">Review</button>
+                    </div>
+                `).join('');
+            } catch (e) {
+                document.getElementById('suggestions-list').innerHTML = '<div class="empty-state">Failed to load suggestions</div>';
+            }
+        }
+
+        // Load senders
+        async function loadSenders() {
+            try {
+                const resp = await fetch('/api/analyze/senders');
+                const data = await resp.json();
+                const list = document.getElementById('senders-list');
+
+                if (!data.senders?.length) {
+                    list.innerHTML = '<div class="empty-state">No senders found</div>';
+                    return;
+                }
+
+                list.innerHTML = data.senders.map(s => `
+                    <div class="sender-item">
+                        <div class="sender-info">
+                            <div class="sender-name">${escapeHtml(s.name)}</div>
+                            <div class="sender-email">${escapeHtml(s.email)}</div>
+                        </div>
+                        <div class="sender-stats">
+                            <span class="stat-pill">${s.count} emails</span>
+                            ${s.unread ? `<span class="stat-pill">${s.unread} unread</span>` : ''}
+                            <span class="stat-pill">${s.size_mb} MB</span>
+                            <button class="btn btn-secondary">Create Rule</button>
+                        </div>
+                    </div>
+                `).join('');
+            } catch (e) {
+                document.getElementById('senders-list').innerHTML = '<div class="empty-state">Failed to load senders</div>';
+            }
+        }
+
+        // Load emails
+        async function loadEmails(query = 'in:inbox') {
+            try {
+                const resp = await fetch(`/api/emails?q=${encodeURIComponent(query)}&limit=50`);
+                const data = await resp.json();
+                const list = document.getElementById('emails-list');
+
+                if (!data.emails?.length) {
+                    list.innerHTML = '<div class="empty-state">No emails found</div>';
+                    return;
+                }
+
+                list.innerHTML = data.emails.map(e => `
+                    <div class="email-item ${e.is_unread ? 'unread' : ''}">
+                        <input type="checkbox" data-id="${e.id}">
+                        <div class="email-sender">${escapeHtml(e.sender)}</div>
+                        <div class="email-subject">${escapeHtml(e.subject)}</div>
+                        <div class="email-date">${new Date(e.date).toLocaleDateString()}</div>
+                    </div>
+                `).join('');
+            } catch (e) {
+                document.getElementById('emails-list').innerHTML = '<div class="empty-state">Failed to load emails</div>';
+            }
+        }
+
+        // Load rules
+        async function loadRules() {
+            try {
+                const resp = await fetch('/api/rules');
+                const data = await resp.json();
+                const list = document.getElementById('rules-list');
+
+                if (!data.rules?.length) {
+                    list.innerHTML = '<div class="empty-state">No rules yet. Create one from the Top Senders tab!</div>';
+                    return;
+                }
+
+                list.innerHTML = '<div class="sender-list">' + data.rules.map(r => `
+                    <div class="sender-item">
+                        <div class="sender-info">
+                            <div class="sender-name">${escapeHtml(r.name)}</div>
+                            <div class="sender-email">${r.from_email ? 'from:' + r.from_email : ''} ${r.subject_contains ? 'subject:' + r.subject_contains : ''}</div>
+                        </div>
+                        <div class="sender-stats">
+                            ${r.archive ? '<span class="stat-pill">Archive</span>' : ''}
+                            ${r.add_label ? '<span class="stat-pill">Label: ' + r.add_label + '</span>' : ''}
+                            <span class="stat-pill">${r.synced ? '✅ Synced' : '⏳ Local only'}</span>
+                        </div>
+                    </div>
+                `).join('') + '</div>';
+            } catch (e) {
+                document.getElementById('rules-list').innerHTML = '<div class="empty-state">Failed to load rules</div>';
+            }
+        }
+
+        function searchEmails() {
+            const query = document.getElementById('search-box').value || 'in:inbox';
+            document.getElementById('emails-list').innerHTML = '<div class="loading">Searching...</div>';
+            loadEmails(query);
+        }
+
+        async function archiveSelected() {
+            const checkboxes = document.querySelectorAll('#emails-list input[type="checkbox"]:checked');
+            const ids = Array.from(checkboxes).map(cb => cb.dataset.id);
+
+            if (!ids.length) {
+                alert('Select emails first');
+                return;
+            }
+
+            try {
+                const resp = await fetch('/api/emails/archive', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({email_ids: ids})
+                });
+                const data = await resp.json();
+                alert(`Archived ${data.archived || 0} emails`);
+                loadEmails();
+            } catch (e) {
+                alert('Failed to archive');
+            }
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text || '';
+            return div.innerHTML;
+        }
+
+        // Enter key for search
+        document.getElementById('search-box').addEventListener('keypress', e => {
+            if (e.key === 'Enter') searchEmails();
+        });
+
+        // Initial load
+        loadStats();
+        loadSuggestions();
+        loadSenders();
+        loadEmails();
+        loadRules();
+    </script>
+</body>
+</html>
